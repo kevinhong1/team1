@@ -5,162 +5,175 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Team 496</title>
-  <!--  Bootstrap  -->
+  <!-- Bootstrap (only for the eventual navbar / layout) -->
   <link
     href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
     rel="stylesheet"
   />
   <style>
-    /*  We want the canvas to fill the screen and sit behind everything  */
     html,
     body {
       width: 100%;
       height: 100%;
       margin: 0;
-      overflow: hidden; /*   Prevent scroll-bars during the intro   */
       background: #ffffff;
+      overflow: hidden; /* avoid scroll-bars during intro */
     }
 
+    /* Three.js canvas */
     #three-canvas {
       position: fixed;
-      inset: 0; /*  Fill viewport  */
+      inset: 0;
       display: block;
-      z-index: 10; /*  Above regular content, below the navbar brand we will reveal */
+      z-index: 10; /* below navbar brand but above rest of page */
+      background: transparent;
     }
 
-    /*  As soon as the animation finishes we reveal the normal brand sitting in the
-        Bootstrap navbar.  */
+    /* Normal navbar brand stays hidden until intro ends */
     .navbar-brand.hidden {
       visibility: hidden;
     }
   </style>
 </head>
 <body>
-  <!--  Placeholder navbar that the word-mark will snap into  -->
+  <!--  Navbar placeholder (word-mark will snap here)  -->
   <nav class="navbar bg-white px-3 position-relative" style="z-index: 15">
     <a class="navbar-brand fw-bold hidden" id="brand">Team&nbsp;496</a>
   </nav>
 
-  <!--   Three.js goes on this canvas   -->
   <canvas id="three-canvas"></canvas>
 
-  <!--  Three.js  -->
+  <!-- Three.js core -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
-  <!--  GSAP (for super-smooth tweens)  -->
+  <!-- Examples utilities (non-module UMD builds so we avoid CORS+file:// issues) -->
+  <script src="https://threejs.org/examples/js/loaders/FontLoader.js"></script>
+  <script src="https://threejs.org/examples/js/geometries/TextGeometry.js"></script>
+  <!-- GSAP for animation -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-  <!--  Text helpers from the examples  -->
-  <script type="module">
-    import { FontLoader } from "https://unpkg.com/three@0.152.2/examples/jsm/loaders/FontLoader.js";
-    import { TextGeometry } from "https://unpkg.com/three@0.152.2/examples/jsm/geometries/TextGeometry.js";
 
-    /* ----------------------  Basic scene setup  ---------------------- */
-    const canvas   = document.getElementById("three-canvas");
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  <script>
+    /* ===== Basic renderer / camera setup ===== */
+    const canvas   = document.getElementById('three-canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
 
     const scene  = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.z = 60;
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 70;
 
-    window.addEventListener("resize", () => {
+    window.addEventListener('resize', () => {
       renderer.setSize(window.innerWidth, window.innerHeight);
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
     });
 
-    /* ----------------------  Create the letters  ---------------------- */
-    const loader = new FontLoader();
-    //  Use a bundled font from the three.js CDN
-    loader.load("https://threejs.org/examples/fonts/helvetiker_regular.typeface.json", (font) => {
-      const message   = "Team 496";
-      const material  = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-      const size      = 6; //   Font size in world units
-      const gap       = 1; //   Extra spacing between letters in the final arrangement
+    /* ===== Helper: pixel to world-space conversion at Z=0 ===== */
+    function pixelToWorld(xPix, yPix) {
+      const vFov   = THREE.MathUtils.degToRad(camera.fov); // vertical fov in radians
+      const height = 2 * Math.tan(vFov / 2) * camera.position.z;   // visible height
+      const width  = height * camera.aspect;                       // visible width
+      const worldPerPixY = height / window.innerHeight;
+      const worldPerPixX = width  / window.innerWidth;
+      return {
+        x: xPix * worldPerPixX,
+        y: yPix * worldPerPixY
+      };
+    }
 
-      //  First measure total width so we can truly centre the word
+    /* ===== Load font and create letters ===== */
+    const loader = new THREE.FontLoader();
+    loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+      const message  = 'Team 496';
+      const size     = 6;     // world-units per character height
+      const gap      = 1;     // spacing between letters in final layout
+      const material = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+
+      // Measure word to centre it nicely
       let totalWidth = 0;
-      const letterGeometries = [];
+      const letters  = [];
+      const widths   = [];
       for (const ch of message) {
-        const geo = new TextGeometry(ch, {
-          font,
-          size,
-          height: 0.5,
-          curveSegments: 4,
-        });
+        const geo = new THREE.TextGeometry(ch, { font, size, height: 0.5, curveSegments: 4 });
         geo.computeBoundingBox();
         const w = geo.boundingBox.max.x - geo.boundingBox.min.x;
+        widths.push(w);
         totalWidth += w + gap;
-        letterGeometries.push({ geo, width: w });
       }
-      totalWidth -= gap; //  Remove last gap
+      totalWidth -= gap;
 
-      //  Create a mesh for each letter, place at random start pos
-      const letters = [];
-      let cursorX   = -totalWidth / 2; // Start so that word is centred when assembled
+      // Root group that we will ultimately move into navbar corner
+      const wordGroup = new THREE.Group();
+      scene.add(wordGroup);
 
-      for (const { geo, width } of letterGeometries) {
+      // Create individual meshes at random positions
+      let cursorX = -totalWidth / 2;
+      for (let i = 0; i < message.length; i++) {
+        const ch   = message[i];
+        const geo  = new THREE.TextGeometry(ch, { font, size, height: 0.5, curveSegments: 4 });
         const mesh = new THREE.Mesh(geo, material);
 
-        //  Scramble position somewhere roughly in the middle third of the screen
+        // Scramble start position (roughly centre of screen volume)
         mesh.position.set(
-          (Math.random() - 0.5) * 40, // x
-          (Math.random() - 0.5) * 20, // y
-          (Math.random() - 0.5) * 20  // z
+          (Math.random() - 0.5) * 40,
+          (Math.random() - 0.5) * 20,
+          (Math.random() - 0.5) * 20
         );
 
-        // Store final position for the mesh
-        mesh.userData.final = { x: cursorX, y: 0, z: 0 };
-        cursorX += width + gap;
+        // Store final (assembled) local position
+        mesh.userData.finalPos = { x: cursorX, y: 0, z: 0 };
+        cursorX += widths[i] + gap;
 
-        scene.add(mesh);
+        wordGroup.add(mesh);
         letters.push(mesh);
       }
 
-      /* ----------------------  Animation timeline  ---------------------- */
-      const tl = gsap.timeline({ defaults: { ease: "power2.inOut" } });
+      /* ===== GSAP timeline ===== */
+      const tl = gsap.timeline({ defaults: { ease: 'power2.inOut' } });
 
-      //  1) Scrambled letters move to form the word – 1s duration
-      letters.forEach((m) => {
-        tl.to(
-          m.position,
-          {
-            duration: 1,
-            x: m.userData.final.x,
-            y: m.userData.final.y,
-            z: m.userData.final.z,
-          },
-          0 //  all start together (relative position 0 in the timeline)
-        );
+      // 1. Each letter flies to its final local position (assemblage)
+      letters.forEach((mesh) => {
+        tl.to(mesh.position, {
+          x: mesh.userData.finalPos.x,
+          y: mesh.userData.finalPos.y,
+          z: mesh.userData.finalPos.z,
+          duration: 1
+        }, 0); // start all at t=0
       });
 
-      //  2) Entire word group slides to the navbar location (top-left) – 0.8s
-      //  We'll treat the whole scene as a group by moving the camera target group.
-      //  Easiest: animate a separate object3D as parent of letters.
-      const wordGroup = new THREE.Group();
-      letters.forEach((m) => wordGroup.add(m));
-      scene.add(wordGroup);
+      // 2. After a small pause, move whole word to navbar corner
+      tl.addLabel('assembled');
+      tl.to(wordGroup.position, {
+        duration: 0.8,
+        x: pixelToWorld(-window.innerWidth/2 + 80, 0).x,  // ~80px from left
+        y: pixelToWorld(0,  window.innerHeight/2 - 60).y  // ~60px from top
+      }, 'assembled+=0.2');
 
-      //  Calculate where the navbar brand is in world space.
-      //  We'll map an approximate offset using the current camera frustum.
-      const leftOffset = -window.innerWidth / 2 + 30;  //  30px right
-      const topOffset  =  window.innerHeight / 2 - 50; //  50px down
-
-      tl.to(wordGroup.position, { duration: 0.8, x: leftOffset / 10, y: topOffset / 10, z: 0 }, "+=0.2");
-
-      //  3) Fade out the canvas & reveal the normal static brand
-      tl.to(canvas, { duration: 0.5, opacity: 0, onComplete: () => {
-        document.getElementById("brand").classList.remove("hidden");
-        canvas.style.display = "none"; //  Keep DOM clean afterwards
-      }});
+      // 3. Fade canvas, reveal static brand
+      tl.to(canvas, {
+        duration: 0.6,
+        opacity: 0,
+        onComplete: () => {
+          document.getElementById('brand').classList.remove('hidden');
+          canvas.style.display = 'none';
+        }
+      });
     });
 
-    /* ----------------------  Render loop  ---------------------- */
+    /* ===== Render loop ===== */
     function animate() {
       requestAnimationFrame(animate);
       renderer.render(scene, camera);
     }
     animate();
   </script>
+
+  <!--
+    IMPORTANT: For the ES5 scripts above to load fonts properly, you need to serve
+    this file via a local web-server (any simple one) instead of opening it via
+    file://.  Examples:
+        • VS-Code Live Server extension
+        • `python -m http.server` (Python 3) then browse to http://localhost:8000/
+  -->
 </body>
 </html>
