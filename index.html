@@ -50,8 +50,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
   <!--  Text helpers from the examples  -->
   <script type="module">
-    import { FontLoader } from "https://cdn.jsdelivr.net/npm/three@0.152/examples/jsm/loaders/FontLoader.js";
-    import { TextGeometry } from "https://cdn.jsdelivr.net/npm/three@0.152/examples/jsm/geometries/TextGeometry.js";
+    import { FontLoader } from "https://unpkg.com/three@0.152.2/examples/jsm/loaders/FontLoader.js";
+    import { TextGeometry } from "https://unpkg.com/three@0.152.2/examples/jsm/geometries/TextGeometry.js";
 
     /* ----------------------  Basic scene setup  ---------------------- */
     const canvas   = document.getElementById("three-canvas");
@@ -74,7 +74,7 @@
     //  Use a bundled font from the three.js CDN
     loader.load("https://threejs.org/examples/fonts/helvetiker_regular.typeface.json", (font) => {
       const message   = "Team 496";
-      const material  = new THREE.MeshBasicMaterial({ color: 0x000000 });
+      const material  = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
       const size      = 6; //   Font size in world units
       const gap       = 1; //   Extra spacing between letters in the final arrangement
 
